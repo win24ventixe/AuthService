@@ -1,8 +1,8 @@
-﻿using Microsoft.AspNetCore.Identity.Data;
+﻿using Azure;
+using Azure.Messaging.ServiceBus;
 using Presentation.Models;
-using System.Net.Http;
-using System.Net.Http.Json;
-
+using Presentation.Providers;
+using System.Text.Json;
 
 namespace Presentation.Services;
 
@@ -14,74 +14,102 @@ public interface IAuthService
     Task<AuthResult> SignUpAsync(SignUpRequest request);
 }
 
-public class AuthService(HttpClient httpClient) : IAuthService
+/* Rewrite using ChatGPT */
+public class AuthService(AuthServiceSender sender, ITokenProvider tokenProvider, ServiceBusReceiver receiver) : IAuthService
 {
-    private readonly HttpClient _httpClient = httpClient;
+    private readonly AuthServiceSender _sender = sender;
+    private readonly ServiceBusReceiver _receiver = receiver;
+    private readonly ITokenProvider _tokenProvider = tokenProvider;
 
-    public async Task<AuthResult> AlreadyExists(string email)
-    {
-        var response = await _httpClient.GetFromJsonAsync<AccountServicehResult>($"https://localhost:7284/api/Accounts/exists/{email}");
-        return response!.Success
-             ? new AuthResult { Success = true }
-             : new AuthResult { Success = false,Error = "User already exists." };
-     }
     public async Task<AuthResult> SignUpAsync(SignUpRequest request)
     {
-        try 
-        {             
-            var existsResult = await AlreadyExists(request.Email);
-            if (existsResult.Success)
-            {
-                return new AuthResult { Success = false, Error = "User already exists." };
-            }
-        }
-        catch (Exception ex)
+        var token = await _tokenProvider.GetTokenAsync();
+
+        var message = new AuthServiceMessage
         {
-            return new AuthResult { Success = false, Error = ex.Message };
-        }
-        try { 
-            var response = await _httpClient.PostAsJsonAsync($"https://localhost:7284/api/Accounts/create", request);
-            if (response.IsSuccessStatusCode)
-            {
-                return new AuthResult { Success = true };
-            }
-            else
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                return new AuthResult { Success = false, Error = error };
-            }
-        }
-        catch (Exception ex)
+            Action = "signup",
+            Payload = request,
+            Token = token
+        };
+
+        await _sender.SendMessageAsync(message, "signup", token);
+
+        var receivedMessage = await _receiver.ReceiveMessageAsync();
+        if (receivedMessage != null)
         {
-            return new AuthResult { Success = false, Error = ex.Message };
+            var response = JsonSerializer.Deserialize<AuthResult>(receivedMessage.Body.ToString());
+            return response ?? new AuthResult { Success = false, Error = "No response received" };
         }
-      
+
+        return new AuthResult { Success = false, Error = "No response received" };
     }
 
     public async Task<AuthResult<LogInResponse>> LoginAsync(LogInRequest request)
     {
-        try
+        var token = await _tokenProvider.GetTokenAsync();
+
+        var message = new AuthServiceMessage
         {
-            var response = await _httpClient.PostAsJsonAsync($"https://localhost:7284/api/Accounts/login", request);
-            if (response.IsSuccessStatusCode)
-            {
-                var loginResponse = await response.Content.ReadFromJsonAsync<LogInResponse>();
-                return new AuthResult<LogInResponse> { Success = true, Result = loginResponse };
-            }
-            else
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                return new AuthResult<LogInResponse> { Success = false, Error = error };
-            }
-        }
-        catch (Exception ex)
+            Action = "login",
+            Payload = request,
+            Token = token
+        };
+
+        await _sender.SendMessageAsync(message, "login", token);
+
+        var receivedMessage = await _receiver.ReceiveMessageAsync();
+        if (receivedMessage != null)
         {
-            return new AuthResult<LogInResponse> { Success = false, Error = ex.Message };
+            var response = JsonSerializer.Deserialize<AuthResult<LogInResponse>>(receivedMessage.Body.ToString());
+            return response ?? new AuthResult<LogInResponse> { Success = false, Error = "No response received" };
         }
+
+        return new AuthResult<LogInResponse> { Success = false, Error = "No response received" };
     }
+
     public async Task<AuthResult> SignOutAsync()
     {
-        await _httpClient.PostAsync($"https://localhost:7284/api/Accounts", null);
-        return new AuthResult { Success = true };
+        var token = await _tokenProvider.GetTokenAsync();
+
+        var message = new AuthServiceMessage
+        {
+            Action = "signout",
+            Payload = null!,
+            Token = token
+        };
+
+        await _sender.SendMessageAsync(message, "signout", token);
+
+        var receivedMessage = await _receiver.ReceiveMessageAsync();
+        if (receivedMessage != null)
+        {
+            var response = JsonSerializer.Deserialize<AuthResult>(receivedMessage.Body.ToString());
+            return response ?? new AuthResult { Success = false, Error = "No response received" };
+        }
+
+        return new AuthResult { Success = false, Error = "No response received" };
+    }
+
+    public async Task<AuthResult> AlreadyExists(string email)
+    {
+        var token = await _tokenProvider.GetTokenAsync();
+
+        var message = new AuthServiceMessage
+        {
+            Action = "exists",
+            Payload = email,
+            Token = token
+        };
+
+        await _sender.SendMessageAsync(message, "exists", token);
+
+        var receivedMessage = await _receiver.ReceiveMessageAsync();
+        if (receivedMessage != null)
+        {
+            var response = JsonSerializer.Deserialize<AuthResult>(receivedMessage.Body.ToString());
+            return response ?? new AuthResult { Success = false, Error = "No response received" };
+        }
+
+        return new AuthResult { Success = false, Error = "No response received" };
     }
 }
