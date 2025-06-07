@@ -1,10 +1,5 @@
 ﻿namespace Presentation.Providers;
 
-public interface ITokenProvider
-{
-    Task<string> GetTokenAsync();
-}
-
 public class TokenProvider(IHttpContextAccessor contextAccessor) : ITokenProvider
 {
     private readonly IHttpContextAccessor _contextAccessor = contextAccessor;

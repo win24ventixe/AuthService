@@ -23,7 +23,7 @@ public class AuthController(IAuthService authService) : ControllerBase
         {
             return Ok(result);
         }
-        return BadRequest(result.Error);
+        return Unauthorized(result.Error);
     }
     [HttpPost("login")]
     public async Task<IActionResult> LogIn(LogInRequest request)
@@ -35,7 +35,7 @@ public class AuthController(IAuthService authService) : ControllerBase
         var result = await _authService.LoginAsync(request);
         if (result.Success)
         {
-            return Ok(result);
+            return Ok(new { token = result.Result!.Token });
         }
         return Unauthorized(result.Error);
     }

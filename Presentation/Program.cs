@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Presentation.Providers;
 using Presentation.Services;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
@@ -23,10 +24,10 @@ builder.Services.AddSingleton<ServiceBusClient>(provider =>
     return new ServiceBusClient(connectionString);
 });
 
-builder.Services.AddScoped<ServiceBusSender>(sp =>
+builder.Services.AddScoped<ServiceBusReceiver>(sp =>
 {
     var client = sp.GetRequiredService<ServiceBusClient>();
-    return client.CreateSender("email-service");
+    return client.CreateReceiver("email-service");
 });
 
 builder.Services.AddScoped<ITokenProvider, TokenProvider>();
@@ -34,6 +35,27 @@ builder.Services.AddScoped<AuthServiceSender>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddHttpContextAccessor();
+
+/* Jwt */
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = "Accounts",
+        ValidAudience = "Accounts",
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("Jwt:Key"))
+    };
+});
+
 
 var app = builder.Build();
 
@@ -46,8 +68,7 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseHttpsRedirection();
-app.UseCors(x => x.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
-
+app.UseCors(x => x.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 app.UseAuthentication();
 app.UseAuthorization();
 
